@@ -9,15 +9,15 @@ export default function App() {
       </nav>
 
       {/* Hero Section */}
-      <section className="px-6 sm:px-8 py-24 md:py-32">
+      <section className="px-6 sm:px-8 py-10 md:py-32">
         <div className="max-w-3xl mx-auto text-center">
-          <p className="text-muted-foreground mb-6 text-sm sm:text-base">
+          <p className="text-muted-foreground mb-3 sm:mb-6 text-sm sm:text-base">
             Disappears when you do.
           </p>
-          <h1 className="mb-6 text-5xl sm:text-6xl md:text-7xl" style={{ fontWeight: 600, lineHeight: 1.1 }}>
+          <h1 className="mb-4 sm:mb-6 text-5xl sm:text-6xl md:text-7xl" style={{ fontWeight: 600, lineHeight: 1.1 }}>
             Chat. Close. Gone.
           </h1>
-          <p className="text-foreground/80 mb-12 max-w-xl mx-auto text-base sm:text-lg px-4">
+          <p className="text-foreground/80 mb-8 sm:mb-12 max-w-xl mx-auto text-base sm:text-lg px-4">
             Share a code. Talk to someone. When you leave, it never happened.
           </p>
           <a
