@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 
-export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+export const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL ?? '').replace(/\/+$/, '')
 export const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
@@ -8,6 +8,8 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
     '[puffchat] VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is missing from .env'
   )
 }
+
+console.log('[puffchat] Supabase URL:', SUPABASE_URL)
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
