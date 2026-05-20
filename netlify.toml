@@ -1,0 +1,9 @@
+[build]
+  command = "bash build.sh"
+  publish = "publish"
+
+# Serve the React SPA for any path under /app
+[[redirects]]
+  from = "/app/*"
+  to = "/app/index.html"
+  status = 200
