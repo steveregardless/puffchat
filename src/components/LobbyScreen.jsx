@@ -33,7 +33,7 @@ export default function LobbyScreen({ onCreated, onJoined }) {
       onCreated(data)
     } catch (e) {
       console.error('[puffchat] unexpected error:', e)
-      setCreateErr('Unexpected error — check the console.')
+      setCreateErr(e?.message ?? 'Network error — check the console.')
     } finally {
       setCreating(false)
     }

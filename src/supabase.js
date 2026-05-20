@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 
-export const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL ?? '').replace(/\/+$/, '')
+export const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL ?? '').trim().replace(/\/+$/, '')
 export const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
@@ -9,9 +9,20 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
   )
 }
 
-console.log('[puffchat] Supabase URL:', SUPABASE_URL)
+console.log('[puffchat] Supabase URL:', JSON.stringify(SUPABASE_URL))
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+function loggedFetch(url, options) {
+  console.log('[puffchat] fetch →', options?.method ?? 'GET', url)
+  return fetch(url, options).then(
+    res => { console.log('[puffchat] fetch ←', res.status, url); return res },
+    err => { console.error('[puffchat] fetch ✗', url, err); return Promise.reject(err) }
+  )
+}
+
+export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  global: { fetch: loggedFetch },
+  auth: { persistSession: false },
+})
 
 // Fires keepalive DELETE requests on tab close — the only reliable
 // way to run cleanup when beforeunload can't await async code.
