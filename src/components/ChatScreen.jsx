@@ -202,11 +202,13 @@ export default function ChatScreen({ room, myToken, onEnd }) {
           <div style={s.empty}>Say something…</div>
         )}
 
-        {messages.map(msg => {
+        {messages.map((msg, i) => {
           const mine = msg.sender_token === myToken
+          const prevMsg = messages[i - 1]
+          const isFirstInGroup = !prevMsg || prevMsg.sender_token !== msg.sender_token
           return (
             <div key={msg.id} style={s.msgGroup(mine)}>
-              <div style={s.msgLabel(mine)}>{mine ? 'You' : 'Them'}</div>
+              {isFirstInGroup && <div style={s.msgLabel(mine)}>{mine ? 'You' : 'Them'}</div>}
               <div style={s.bubble(mine)}>{msg.content}</div>
             </div>
           )
