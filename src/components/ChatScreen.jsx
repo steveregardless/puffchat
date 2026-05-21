@@ -205,11 +205,13 @@ export default function ChatScreen({ room, myToken, onEnd }) {
         {messages.map((msg, i) => {
           const mine = msg.sender_token === myToken
           const prevMsg = messages[i - 1]
+          const nextMsg = messages[i + 1]
           const isFirstInGroup = !prevMsg || prevMsg.sender_token !== msg.sender_token
+          const isLastInGroup = !nextMsg || nextMsg.sender_token !== msg.sender_token
           return (
-            <div key={msg.id} style={s.msgGroup(mine)}>
+            <div key={msg.id} style={s.msgGroup(mine, isLastInGroup)}>
               {isFirstInGroup && <div style={s.msgLabel(mine)}>{mine ? 'You' : 'Them'}</div>}
-              <div style={s.bubble(mine)}>{msg.content}</div>
+              <div style={s.bubble(mine, isLastInGroup)}>{msg.content}</div>
             </div>
           )
         })}
@@ -341,19 +343,21 @@ const s = {
     padding: '28px 20px',
     display: 'flex',
     flexDirection: 'column',
-    gap: '18px',
+    justifyContent: 'flex-start',
   },
   empty: {
-    margin: 'auto',
+    alignSelf: 'center',
+    marginTop: '32px',
     color: '#333',
     fontSize: '14px',
     textAlign: 'center',
   },
-  msgGroup: mine => ({
+  msgGroup: (mine, isLastInGroup) => ({
     display: 'flex',
     flexDirection: 'column',
     alignItems: mine ? 'flex-end' : 'flex-start',
     gap: '4px',
+    marginBottom: isLastInGroup ? 12 : 4,
   }),
   msgLabel: () => ({
     fontSize: '11px',
@@ -361,10 +365,12 @@ const s = {
     paddingLeft: '4px',
     paddingRight: '4px',
   }),
-  bubble: mine => ({
+  bubble: (mine, isLastInGroup) => ({
     maxWidth: '72%',
     padding: '10px 16px',
-    borderRadius: mine ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+    borderRadius: mine
+      ? (isLastInGroup ? '18px 18px 4px 18px' : '18px')
+      : (isLastInGroup ? '18px 18px 18px 4px' : '18px'),
     background: mine ? '#1d4ed8' : '#111111',
     border: mine ? 'none' : '1px solid #1a1a1a',
     color: '#f5f5f5',
@@ -383,6 +389,7 @@ const s = {
     borderRadius: '18px 18px 18px 4px',
     animation: 'fadeIn 0.2s ease-out',
     alignSelf: 'flex-start',
+    marginTop: '4px',
   },
   dot: {
     display: 'inline-block',
