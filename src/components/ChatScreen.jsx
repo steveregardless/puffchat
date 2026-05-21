@@ -9,6 +9,9 @@ export default function ChatScreen({ room, myToken, onEnd }) {
   const [partnerGone, setPartnerGone] = useState(false)
   const [partnerTyping, setPartnerTyping] = useState(false)
   const [showGifPicker, setShowGifPicker] = useState(false)
+  const [smokeParticles, setSmokeParticles] = useState([])
+  const [confettiParticles, setConfettiParticles] = useState([])
+  const [codeGlowing, setCodeGlowing] = useState(false)
   const bottomRef = useRef(null)
   const cleanedRef = useRef(false)
   const presenceRef = useRef(null)
@@ -16,6 +19,7 @@ export default function ChatScreen({ room, myToken, onEnd }) {
   const typingTimerRef = useRef(null)
   const typingClearTimerRef = useRef(null)
   const partnerSeenRef = useRef(false)
+  const codeClickRef = useRef({ count: 0, timer: null })
 
   const doCleanup = useCallback(async () => {
     if (cleanedRef.current) return
@@ -116,10 +120,50 @@ export default function ChatScreen({ room, myToken, onEnd }) {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, partnerTyping])
 
+  function triggerPuffSmoke() {
+    const particles = Array.from({ length: 5 }, (_, i) => ({
+      id: `smoke-${Date.now()}-${i}`,
+      x: 15 + Math.random() * 70,
+      delay: i * 120,
+      size: 18 + Math.floor(Math.random() * 10),
+    }))
+    setSmokeParticles(particles)
+    setTimeout(() => setSmokeParticles([]), 1800)
+  }
+
+  function triggerConfetti() {
+    const colors = ['#1d4ed8', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#f5f5f5', '#ec4899', '#06b6d4']
+    const particles = Array.from({ length: 34 }, (_, i) => ({
+      id: `conf-${Date.now()}-${i}`,
+      x: 3 + Math.random() * 94,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      delay: Math.floor(Math.random() * 350),
+      spin: Math.random() > 0.5 ? 'confettiL' : 'confettiR',
+      w: 4 + Math.floor(Math.random() * 5),
+      h: 7 + Math.floor(Math.random() * 6),
+    }))
+    setConfettiParticles(particles)
+    setTimeout(() => setConfettiParticles([]), 2600)
+  }
+
+  function handleCodeClick() {
+    const ref = codeClickRef.current
+    ref.count += 1
+    clearTimeout(ref.timer)
+    ref.timer = setTimeout(() => { ref.count = 0 }, 1400)
+    if (ref.count >= 5) {
+      ref.count = 0
+      setCodeGlowing(true)
+      setTimeout(() => setCodeGlowing(false), 1100)
+    }
+  }
+
   async function sendMessage() {
     const text = input.trim().slice(0, 2000)
     if (!text) return
     setInput('')
+    if (/puff/i.test(text)) triggerPuffSmoke()
+    if (text.includes('🎉')) triggerConfetti()
 
     clearTimeout(typingTimerRef.current)
     typingChanRef.current?.send({ type: 'broadcast', event: 'typing', payload: { typing: false } })
@@ -207,9 +251,53 @@ export default function ChatScreen({ room, myToken, onEnd }) {
         </div>
       )}
 
+      {smokeParticles.map(p => (
+        <div
+          key={p.id}
+          style={{
+            position: 'absolute',
+            bottom: '10px',
+            left: `${p.x}%`,
+            fontSize: `${p.size}px`,
+            animation: `smokeFloat 1.5s ease-out ${p.delay}ms forwards`,
+            pointerEvents: 'none',
+            zIndex: 20,
+            userSelect: 'none',
+          }}
+        >
+          💨
+        </div>
+      ))}
+
+      {confettiParticles.map(p => (
+        <div
+          key={p.id}
+          style={{
+            position: 'absolute',
+            bottom: '0',
+            left: `${p.x}%`,
+            width: `${p.w}px`,
+            height: `${p.h}px`,
+            background: p.color,
+            borderRadius: '1px',
+            animation: `${p.spin} 1.8s ease-out ${p.delay}ms forwards`,
+            pointerEvents: 'none',
+            zIndex: 20,
+          }}
+        />
+      ))}
+
       <div style={s.header}>
         <span style={s.headerLogo}>puffchat</span>
-        <span style={s.headerBadge}>{room.code}</span>
+        <span
+          style={{
+            ...s.headerBadge,
+            ...(codeGlowing ? { animation: 'codeGlowPulse 1.1s ease-in-out' } : {}),
+          }}
+          onClick={handleCodeClick}
+        >
+          {room.code}
+        </span>
       </div>
 
       <div style={s.messageList}>
