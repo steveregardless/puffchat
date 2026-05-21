@@ -158,12 +158,16 @@ export default function ChatScreen({ room, myToken, onEnd }) {
     }
     setMessages(prev => [...prev, optimistic])
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('messages')
       .insert({ room_id: room.id, content, sender_token: myToken })
       .select()
       .single()
 
+    if (error) {
+      setMessages(prev => prev.filter(m => m.id !== tempId))
+      return
+    }
     if (data) {
       setMessages(prev => prev.map(m => (m.id === tempId ? data : m)))
     }
@@ -338,7 +342,7 @@ function GifPicker({ onSelect, onClose }) {
             src={gif.images.fixed_height_small.url}
             alt={gif.title}
             style={gp.thumb}
-            onClick={() => onSelect(gif.images.fixed_height.url)}
+            onClick={() => onSelect(`https://media.giphy.com/media/${gif.id}/giphy.gif`)}
           />
         ))}
       </div>
