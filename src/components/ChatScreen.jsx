@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase, registerCleanup } from '../supabase'
 
+const GIPHY_KEY = (import.meta.env.VITE_GIPHY_API_KEY ?? '').trim()
+
 export default function ChatScreen({ room, myToken, onEnd }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [partnerGone, setPartnerGone] = useState(false)
   const [partnerTyping, setPartnerTyping] = useState(false)
+  const [showGifPicker, setShowGifPicker] = useState(false)
   const bottomRef = useRef(null)
   const cleanedRef = useRef(false)
   const presenceRef = useRef(null)
@@ -22,7 +25,6 @@ export default function ChatScreen({ room, myToken, onEnd }) {
   }, [room.id])
 
   useEffect(() => {
-    // Load existing messages
     supabase
       .from('messages')
       .select('*')
@@ -30,11 +32,8 @@ export default function ChatScreen({ room, myToken, onEnd }) {
       .order('created_at', { ascending: true })
       .then(({ data }) => setMessages(data ?? []))
 
-    // Register beforeunload keepalive cleanup
     const unregister = registerCleanup(room.id)
 
-    // Realtime: incoming messages — no server-side filter so it works without
-    // REPLICA IDENTITY FULL; we filter by room_id client-side instead.
     const msgChan = supabase
       .channel(`msgs-${room.id}`)
       .on(
@@ -49,7 +48,6 @@ export default function ChatScreen({ room, myToken, onEnd }) {
       )
       .subscribe()
 
-    // Polling fallback: catches messages if Realtime isn't configured or lags.
     const poll = setInterval(async () => {
       const { data } = await supabase
         .from('messages')
@@ -65,8 +63,6 @@ export default function ChatScreen({ room, myToken, onEnd }) {
       }
     }, 2000)
 
-    // Presence: disconnect detection only. Never carries typing state so
-    // track() is only called once (on subscribe) — no false leave events.
     const presence = supabase.channel(`presence-${room.id}`, {
       config: { presence: { key: myToken } },
     })
@@ -87,8 +83,6 @@ export default function ChatScreen({ room, myToken, onEnd }) {
         }
       })
 
-    // Broadcast channel: typing indicator only. Broadcast doesn't echo back
-    // to the sender so no self-filtering needed.
     const typingChan = supabase.channel(`typing-${room.id}`)
     typingChanRef.current = typingChan
     typingChan
@@ -118,7 +112,6 @@ export default function ChatScreen({ room, myToken, onEnd }) {
     }
   }, [room.id, myToken, doCleanup])
 
-  // Auto-scroll on new messages or when typing indicator appears
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, partnerTyping])
@@ -131,7 +124,6 @@ export default function ChatScreen({ room, myToken, onEnd }) {
     clearTimeout(typingTimerRef.current)
     typingChanRef.current?.send({ type: 'broadcast', event: 'typing', payload: { typing: false } })
 
-    // Optimistic insert
     const tempId = `tmp-${Date.now()}`
     const optimistic = {
       id: tempId,
@@ -153,6 +145,30 @@ export default function ChatScreen({ room, myToken, onEnd }) {
     }
   }
 
+  async function sendGif(gifUrl) {
+    setShowGifPicker(false)
+    const content = `gif::${gifUrl}`
+    const tempId = `tmp-${Date.now()}`
+    const optimistic = {
+      id: tempId,
+      room_id: room.id,
+      content,
+      sender_token: myToken,
+      created_at: new Date().toISOString(),
+    }
+    setMessages(prev => [...prev, optimistic])
+
+    const { data } = await supabase
+      .from('messages')
+      .insert({ room_id: room.id, content, sender_token: myToken })
+      .select()
+      .single()
+
+    if (data) {
+      setMessages(prev => prev.map(m => (m.id === tempId ? data : m)))
+    }
+  }
+
   function onKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -162,12 +178,10 @@ export default function ChatScreen({ room, myToken, onEnd }) {
 
   function onInputChange(e) {
     setInput(e.target.value)
-    // Auto-resize textarea
     const el = e.target
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`
 
-    // Broadcast typing; stop after 2s of inactivity
     typingChanRef.current?.send({ type: 'broadcast', event: 'typing', payload: { typing: true } })
     clearTimeout(typingTimerRef.current)
     typingTimerRef.current = setTimeout(() => {
@@ -177,7 +191,6 @@ export default function ChatScreen({ room, myToken, onEnd }) {
 
   return (
     <div style={s.root}>
-      {/* Partner left overlay */}
       {partnerGone && (
         <div style={s.overlay}>
           <div style={s.overlayBox}>
@@ -190,13 +203,11 @@ export default function ChatScreen({ room, myToken, onEnd }) {
         </div>
       )}
 
-      {/* Header */}
       <div style={s.header}>
         <span style={s.headerLogo}>puffchat</span>
         <span style={s.headerBadge}>{room.code}</span>
       </div>
 
-      {/* Messages */}
       <div style={s.messageList}>
         {messages.length === 0 && (
           <div style={s.empty}>Say something…</div>
@@ -208,10 +219,15 @@ export default function ChatScreen({ room, myToken, onEnd }) {
           const nextMsg = messages[i + 1]
           const isFirstInGroup = !prevMsg || prevMsg.sender_token !== msg.sender_token
           const isLastInGroup = !nextMsg || nextMsg.sender_token !== msg.sender_token
+          const isGif = msg.content.startsWith('gif::')
           return (
             <div key={msg.id} style={s.msgGroup(mine, isLastInGroup)}>
               {isFirstInGroup && <div style={s.msgLabel(mine)}>{mine ? 'You' : 'Them'}</div>}
-              <div style={s.bubble(mine, isLastInGroup)}>{msg.content}</div>
+              <div style={s.bubble(mine, isLastInGroup, isGif)}>
+                {isGif
+                  ? <img src={msg.content.slice(5)} alt="" style={s.gifImg} />
+                  : msg.content}
+              </div>
             </div>
           )
         })}
@@ -227,8 +243,18 @@ export default function ChatScreen({ room, myToken, onEnd }) {
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
+      {showGifPicker && (
+        <GifPicker onSelect={sendGif} onClose={() => setShowGifPicker(false)} />
+      )}
+
       <div style={s.inputBar}>
+        <button
+          style={{ ...s.gifBtn, ...(showGifPicker ? s.gifBtnActive : {}) }}
+          onClick={() => setShowGifPicker(v => !v)}
+          aria-label="Send a GIF"
+        >
+          GIF
+        </button>
         <textarea
           style={s.textarea}
           placeholder="Type a message…"
@@ -245,6 +271,79 @@ export default function ChatScreen({ room, myToken, onEnd }) {
         >
           <SendIcon />
         </button>
+      </div>
+    </div>
+  )
+}
+
+function GifPicker({ onSelect, onClose }) {
+  const [query, setQuery] = useState('')
+  const [gifs, setGifs] = useState([])
+  const [loading, setLoading] = useState(false)
+  const searchTimerRef = useRef(null)
+  const inputRef = useRef(null)
+
+  useEffect(() => {
+    fetchGifs('')
+    inputRef.current?.focus()
+
+    function onKey(e) {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  async function fetchGifs(q) {
+    if (!GIPHY_KEY) return
+    setLoading(true)
+    try {
+      const base = q
+        ? `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(q)}&limit=24&rating=g`
+        : `https://api.giphy.com/v1/gifs/trending?api_key=${GIPHY_KEY}&limit=24&rating=g`
+      const res = await fetch(base)
+      const json = await res.json()
+      setGifs(json.data ?? [])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function onQueryChange(e) {
+    const q = e.target.value
+    setQuery(q)
+    clearTimeout(searchTimerRef.current)
+    searchTimerRef.current = setTimeout(() => fetchGifs(q), 400)
+  }
+
+  return (
+    <div style={gp.panel}>
+      <input
+        ref={inputRef}
+        style={gp.search}
+        placeholder="Search GIFs…"
+        value={query}
+        onChange={onQueryChange}
+      />
+      {!GIPHY_KEY && (
+        <div style={gp.notice}>Add VITE_GIPHY_API_KEY to .env to enable GIFs</div>
+      )}
+      {GIPHY_KEY && loading && gifs.length === 0 && (
+        <div style={gp.notice}>Loading…</div>
+      )}
+      <div style={gp.grid}>
+        {gifs.map(gif => (
+          <img
+            key={gif.id}
+            src={gif.images.fixed_height_small.url}
+            alt={gif.title}
+            style={gp.thumb}
+            onClick={() => onSelect(gif.images.fixed_height.url)}
+          />
+        ))}
+      </div>
+      <div style={gp.attribution}>
+        <img src="https://media.giphy.com/headers/GIPHY-primary-wordmark.png" alt="Powered by GIPHY" style={gp.giphyLogo} />
       </div>
     </div>
   )
@@ -365,9 +464,9 @@ const s = {
     paddingLeft: '4px',
     paddingRight: '4px',
   }),
-  bubble: (mine, isLastInGroup) => ({
-    maxWidth: '72%',
-    padding: '10px 16px',
+  bubble: (mine, isLastInGroup, isGif) => ({
+    maxWidth: isGif ? '60%' : '72%',
+    padding: isGif ? '4px' : '10px 16px',
     borderRadius: mine
       ? (isLastInGroup ? '18px 18px 4px 18px' : '18px')
       : (isLastInGroup ? '18px 18px 18px 4px' : '18px'),
@@ -377,8 +476,14 @@ const s = {
     fontSize: '14px',
     lineHeight: '1.55',
     wordBreak: 'break-word',
-    whiteSpace: 'pre-wrap',
+    whiteSpace: isGif ? 'normal' : 'pre-wrap',
+    overflow: 'hidden',
   }),
+  gifImg: {
+    display: 'block',
+    width: '100%',
+    borderRadius: '14px',
+  },
   typingBubble: {
     display: 'flex',
     alignItems: 'center',
@@ -406,6 +511,24 @@ const s = {
     borderTop: '1px solid #1a1a1a',
     alignItems: 'flex-end',
     flexShrink: 0,
+  },
+  gifBtn: {
+    height: '44px',
+    padding: '0 12px',
+    background: 'transparent',
+    border: '1px solid #1a1a1a',
+    borderRadius: '999px',
+    color: '#555',
+    fontSize: '11px',
+    fontWeight: 700,
+    letterSpacing: '0.5px',
+    cursor: 'pointer',
+    flexShrink: 0,
+    transition: 'color 0.15s, border-color 0.15s',
+  },
+  gifBtnActive: {
+    color: '#1d4ed8',
+    borderColor: '#1d4ed8',
   },
   textarea: {
     flex: 1,
@@ -435,5 +558,59 @@ const s = {
     cursor: 'pointer',
     flexShrink: 0,
     transition: 'opacity 0.15s',
+  },
+}
+
+const gp = {
+  panel: {
+    borderTop: '1px solid #1a1a1a',
+    background: '#080808',
+    padding: '12px',
+    height: '280px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    flexShrink: 0,
+  },
+  search: {
+    background: '#111111',
+    border: '1px solid #1a1a1a',
+    borderRadius: '999px',
+    padding: '8px 16px',
+    fontSize: '13px',
+    color: '#f5f5f5',
+    caretColor: '#1d4ed8',
+    flexShrink: 0,
+    outline: 'none',
+  },
+  grid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '6px',
+    overflowY: 'auto',
+    flex: 1,
+  },
+  thumb: {
+    width: '100%',
+    height: '80px',
+    objectFit: 'cover',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    display: 'block',
+  },
+  notice: {
+    color: '#444',
+    fontSize: '12px',
+    textAlign: 'center',
+    padding: '16px 0',
+  },
+  attribution: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    flexShrink: 0,
+  },
+  giphyLogo: {
+    height: '14px',
+    opacity: 0.3,
   },
 }
