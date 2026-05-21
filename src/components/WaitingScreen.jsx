@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { supabase } from '../supabase'
+import { supabase, SUPABASE_URL, SUPABASE_KEY } from '../supabase'
 
 export default function WaitingScreen({ room, onPartnerJoined, onCancel }) {
   const [copied, setCopied] = useState(false)
@@ -8,6 +8,23 @@ export default function WaitingScreen({ room, onPartnerJoined, onCancel }) {
   const doneRef = useRef(false)
 
   useEffect(() => {
+    // Keepalive cleanup: if the creator closes the tab while waiting, delete the
+    // room so it doesn't sit orphaned in 'waiting' status forever.
+    const safeId = encodeURIComponent(room.id)
+    const cleanupHeaders = {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`,
+      'Content-Type': 'application/json',
+    }
+    function onUnload() {
+      fetch(`${SUPABASE_URL}/rest/v1/rooms?id=eq.${safeId}`, {
+        method: 'DELETE',
+        keepalive: true,
+        headers: cleanupHeaders,
+      })
+    }
+    window.addEventListener('beforeunload', onUnload)
+
     // Primary path: Realtime UPDATE on this room row
     const chan = supabase
       .channel(`room-watch-${room.id}`)
@@ -45,6 +62,7 @@ export default function WaitingScreen({ room, onPartnerJoined, onCancel }) {
     }, 2000)
 
     return () => {
+      window.removeEventListener('beforeunload', onUnload)
       chan.unsubscribe()
       clearInterval(poll)
     }

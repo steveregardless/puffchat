@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../supabase'
 
+const CODE_RE = /^[A-Z2-9]{3}-[A-Z2-9]{3}$/
+
 function makeCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
   const bytes = crypto.getRandomValues(new Uint8Array(6))
@@ -101,6 +103,10 @@ function JoinModal({ onJoined, onClose }) {
       setErr('Enter a room code.')
       return
     }
+    if (!CODE_RE.test(trimmed)) {
+      setErr('Invalid code format. Should look like ABC-123.')
+      return
+    }
     setJoining(true)
     setErr('')
     try {
@@ -111,7 +117,6 @@ function JoinModal({ onJoined, onClose }) {
         .eq('status', 'waiting')
 
       if (error) {
-        console.error('[puffchat] join query error:', error)
         setErr(`${error.message} (${error.code})`)
         setJoining(false)
         return
@@ -124,22 +129,31 @@ function JoinModal({ onJoined, onClose }) {
       }
 
       const room = rows[0]
-      const { error: upErr } = await supabase
+
+      // Atomic conditional update: only succeeds if the room is still 'waiting'.
+      // Prevents two simultaneous joiners both entering the same room.
+      const { data: updated, error: upErr } = await supabase
         .from('rooms')
         .update({ status: 'active' })
         .eq('id', room.id)
+        .eq('status', 'waiting')
+        .select('id')
 
       if (upErr) {
-        console.error('[puffchat] update room error:', upErr)
         setErr(`${upErr.message} (${upErr.code})`)
+        setJoining(false)
+        return
+      }
+
+      if (!updated?.length) {
+        setErr('Room was just taken by someone else. Try another code.')
         setJoining(false)
         return
       }
 
       onJoined(room)
     } catch (e) {
-      console.error('[puffchat] unexpected join error:', e)
-      setErr('Unexpected error — check the console.')
+      setErr(e?.message ?? 'Network error.')
       setJoining(false)
     }
   }

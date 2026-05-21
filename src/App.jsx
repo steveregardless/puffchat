@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import LobbyScreen from './components/LobbyScreen'
 import WaitingScreen from './components/WaitingScreen'
 import ChatScreen from './components/ChatScreen'
@@ -12,20 +12,22 @@ export default function App() {
   const [room, setRoom] = useState(null)
   const [myToken] = useState(getSenderToken)
 
-  function goWaiting(room) {
+  const goWaiting = useCallback((room) => {
     setRoom(room)
     setScreen('waiting')
-  }
+  }, [])
 
-  function goChat(room) {
+  const goChat = useCallback((room) => {
     setRoom(room)
     setScreen('chat')
-  }
+  }, [])
 
-  function goLobby() {
+  const goLobby = useCallback(() => {
     setRoom(null)
     setScreen('lobby')
-  }
+  }, [])
+
+  const goPartnerJoined = useCallback(() => setScreen('chat'), [])
 
   return (
     <div style={{ height: '100%' }}>
@@ -35,7 +37,7 @@ export default function App() {
       {screen === 'waiting' && (
         <WaitingScreen
           room={room}
-          onPartnerJoined={() => setScreen('chat')}
+          onPartnerJoined={goPartnerJoined}
           onCancel={goLobby}
         />
       )}

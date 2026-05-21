@@ -4,12 +4,11 @@ export const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL ?? '').trim().rep
 export const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
-  console.error(
-    '[puffchat] VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is missing from .env'
-  )
+  // Only log in dev — never expose config details in production console
+  if (import.meta.env.DEV) {
+    console.error('[puffchat] VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is missing from .env')
+  }
 }
-
-console.log('[puffchat] Supabase URL:', JSON.stringify(SUPABASE_URL))
 
 function loggedFetch(url, options) {
   console.log('[puffchat] fetch →', options?.method ?? 'GET', url)
@@ -20,7 +19,8 @@ function loggedFetch(url, options) {
 }
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  global: { fetch: loggedFetch },
+  // Verbose fetch wrapper only in dev — never log request URLs/status in production
+  global: { fetch: import.meta.env.DEV ? loggedFetch : fetch },
   auth: { persistSession: false },
 })
 
@@ -32,13 +32,14 @@ export function registerCleanup(roomId) {
     Authorization: `Bearer ${SUPABASE_KEY}`,
     'Content-Type': 'application/json',
   }
+  const safeId = encodeURIComponent(roomId)
   function cleanup() {
-    fetch(`${SUPABASE_URL}/rest/v1/messages?room_id=eq.${roomId}`, {
+    fetch(`${SUPABASE_URL}/rest/v1/messages?room_id=eq.${safeId}`, {
       method: 'DELETE',
       keepalive: true,
       headers,
     })
-    fetch(`${SUPABASE_URL}/rest/v1/rooms?id=eq.${roomId}`, {
+    fetch(`${SUPABASE_URL}/rest/v1/rooms?id=eq.${safeId}`, {
       method: 'DELETE',
       keepalive: true,
       headers,

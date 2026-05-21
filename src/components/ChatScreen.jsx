@@ -124,7 +124,7 @@ export default function ChatScreen({ room, myToken, onEnd }) {
   }, [messages, partnerTyping])
 
   async function sendMessage() {
-    const text = input.trim()
+    const text = input.trim().slice(0, 2000)
     if (!text) return
     setInput('')
 
@@ -232,6 +232,7 @@ export default function ChatScreen({ room, myToken, onEnd }) {
           onChange={onInputChange}
           onKeyDown={onKeyDown}
           rows={1}
+          maxLength={2000}
         />
         <button
           style={{ ...s.sendBtn, opacity: input.trim() ? 1 : 0.3 }}
