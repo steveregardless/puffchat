@@ -2,6 +2,18 @@
   command = "bash build.sh"
   publish = "publish"
 
+# Correct content-type for the PWA manifest (Netlify doesn't set this automatically)
+[[headers]]
+  for = "/app/manifest.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json; charset=utf-8"
+
+# Prevent CDN from caching the service worker so updates propagate immediately
+[[headers]]
+  for = "/app/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
 # Serve the React SPA for any path under /app
 [[redirects]]
   from = "/app/*"
