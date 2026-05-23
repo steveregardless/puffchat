@@ -18,12 +18,17 @@ CREATE TABLE rooms (
 );
 
 CREATE TABLE messages (
-  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  room_id      UUID        NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-  content      TEXT        NOT NULL CHECK (length(content) BETWEEN 1 AND 2000),
-  sender_token TEXT        NOT NULL CHECK (length(sender_token) BETWEEN 1 AND 100),
-  created_at   TIMESTAMPTZ DEFAULT NOW()
+  id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  room_id          UUID        NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+  content          TEXT        NOT NULL CHECK (length(content) BETWEEN 1 AND 2000),
+  sender_token     TEXT        NOT NULL CHECK (length(sender_token) BETWEEN 1 AND 100),
+  reply_to_content TEXT        CHECK (reply_to_content IS NULL OR length(reply_to_content) <= 200),
+  created_at       TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Upgrading an existing install? Run just this migration (skip the full setup above):
+-- ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_content TEXT
+--   CHECK (reply_to_content IS NULL OR length(reply_to_content) <= 200);
 
 -- 3. Index for fast code lookups and orphan cleanup
 CREATE INDEX rooms_code_idx      ON rooms (code);

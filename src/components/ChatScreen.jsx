@@ -12,6 +12,7 @@ export default function ChatScreen({ room, myToken, onEnd }) {
   const [smokeParticles, setSmokeParticles] = useState([])
   const [confettiParticles, setConfettiParticles] = useState([])
   const [codeGlowing, setCodeGlowing] = useState(false)
+  const [replyTo, setReplyTo] = useState(null)
   const bottomRef = useRef(null)
   const cleanedRef = useRef(false)
   const presenceRef = useRef(null)
@@ -20,6 +21,8 @@ export default function ChatScreen({ room, myToken, onEnd }) {
   const typingClearTimerRef = useRef(null)
   const partnerSeenRef = useRef(false)
   const codeClickRef = useRef({ count: 0, timer: null })
+  const textareaRef = useRef(null)
+  const longPressTimerRef = useRef(null)
 
   const doCleanup = useCallback(async () => {
     if (cleanedRef.current) return
@@ -108,6 +111,7 @@ export default function ChatScreen({ room, myToken, onEnd }) {
       clearInterval(poll)
       clearTimeout(typingTimerRef.current)
       clearTimeout(typingClearTimerRef.current)
+      clearTimeout(longPressTimerRef.current)
       msgChan.unsubscribe()
       presence.unsubscribe()
       typingChan.unsubscribe()
@@ -119,6 +123,29 @@ export default function ChatScreen({ room, myToken, onEnd }) {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, partnerTyping])
+
+  function replyPreviewText(content) {
+    if (content.startsWith('gif::')) return 'GIF'
+    return content.length > 50 ? content.slice(0, 50) + '…' : content
+  }
+
+  function triggerReply(msg) {
+    setReplyTo({ content: msg.content })
+    setTimeout(() => textareaRef.current?.focus(), 0)
+  }
+
+  function onMsgTouchStart(msg) {
+    longPressTimerRef.current = setTimeout(() => triggerReply(msg), 500)
+  }
+
+  function onMsgTouchEnd() {
+    clearTimeout(longPressTimerRef.current)
+  }
+
+  function onMsgContextMenu(e, msg) {
+    e.preventDefault()
+    triggerReply(msg)
+  }
 
   function triggerPuffSmoke() {
     const particles = Array.from({ length: 5 }, (_, i) => ({
@@ -161,7 +188,10 @@ export default function ChatScreen({ room, myToken, onEnd }) {
   async function sendMessage() {
     const text = input.trim().slice(0, 2000)
     if (!text) return
+    const replyContent = replyTo ? replyTo.content.slice(0, 200) : null
     setInput('')
+    if (textareaRef.current) textareaRef.current.style.height = 'auto'
+    setReplyTo(null)
     if (/puff/i.test(text)) triggerPuffSmoke()
     if (text.includes('🎉')) triggerConfetti()
 
@@ -175,36 +205,16 @@ export default function ChatScreen({ room, myToken, onEnd }) {
       content: text,
       sender_token: myToken,
       created_at: new Date().toISOString(),
+      reply_to_content: replyContent,
     }
     setMessages(prev => [...prev, optimistic])
 
-    const { data } = await supabase
-      .from('messages')
-      .insert({ room_id: room.id, content: text, sender_token: myToken })
-      .select()
-      .single()
-
-    if (data) {
-      setMessages(prev => prev.map(m => (m.id === tempId ? data : m)))
-    }
-  }
-
-  async function sendGif(gifUrl) {
-    setShowGifPicker(false)
-    const content = `gif::${gifUrl}`
-    const tempId = `tmp-${Date.now()}`
-    const optimistic = {
-      id: tempId,
-      room_id: room.id,
-      content,
-      sender_token: myToken,
-      created_at: new Date().toISOString(),
-    }
-    setMessages(prev => [...prev, optimistic])
+    const insertPayload = { room_id: room.id, content: text, sender_token: myToken }
+    if (replyContent !== null) insertPayload.reply_to_content = replyContent
 
     const { data, error } = await supabase
       .from('messages')
-      .insert({ room_id: room.id, content, sender_token: myToken })
+      .insert(insertPayload)
       .select()
       .single()
 
@@ -213,7 +223,41 @@ export default function ChatScreen({ room, myToken, onEnd }) {
       return
     }
     if (data) {
-      setMessages(prev => prev.map(m => (m.id === tempId ? data : m)))
+      setMessages(prev => prev.filter(m => m.id !== data.id).map(m => (m.id === tempId ? data : m)))
+    }
+  }
+
+  async function sendGif(gifUrl) {
+    setShowGifPicker(false)
+    const content = `gif::${gifUrl}`
+    const replyContent = replyTo ? replyTo.content.slice(0, 200) : null
+    setReplyTo(null)
+    const tempId = `tmp-${Date.now()}`
+    const optimistic = {
+      id: tempId,
+      room_id: room.id,
+      content,
+      sender_token: myToken,
+      created_at: new Date().toISOString(),
+      reply_to_content: replyContent,
+    }
+    setMessages(prev => [...prev, optimistic])
+
+    const gifPayload = { room_id: room.id, content, sender_token: myToken }
+    if (replyContent !== null) gifPayload.reply_to_content = replyContent
+
+    const { data, error } = await supabase
+      .from('messages')
+      .insert(gifPayload)
+      .select()
+      .single()
+
+    if (error) {
+      setMessages(prev => prev.filter(m => m.id !== tempId))
+      return
+    }
+    if (data) {
+      setMessages(prev => prev.filter(m => m.id !== data.id).map(m => (m.id === tempId ? data : m)))
     }
   }
 
@@ -312,10 +356,22 @@ export default function ChatScreen({ room, myToken, onEnd }) {
           const isFirstInGroup = !prevMsg || prevMsg.sender_token !== msg.sender_token
           const isLastInGroup = !nextMsg || nextMsg.sender_token !== msg.sender_token
           const isGif = msg.content.startsWith('gif::')
+          const hasReply = Boolean(msg.reply_to_content)
           return (
             <div key={msg.id} style={s.msgGroup(mine, isLastInGroup)}>
               {isFirstInGroup && <div style={s.msgLabel(mine)}>{mine ? 'You' : 'Them'}</div>}
-              <div style={s.bubble(mine, isLastInGroup, isGif)}>
+              <div
+                style={s.bubble(mine, isLastInGroup, isGif, hasReply)}
+                onContextMenu={e => onMsgContextMenu(e, msg)}
+                onTouchStart={() => onMsgTouchStart(msg)}
+                onTouchEnd={onMsgTouchEnd}
+                onTouchMove={onMsgTouchEnd}
+              >
+                {hasReply && (
+                  <div style={s.quotedBlock(mine)}>
+                    {msg.reply_to_content.startsWith('gif::') ? '📷 GIF' : msg.reply_to_content}
+                  </div>
+                )}
                 {isGif
                   ? <img src={msg.content.slice(5)} alt="" style={s.gifImg} />
                   : msg.content}
@@ -339,6 +395,13 @@ export default function ChatScreen({ room, myToken, onEnd }) {
         <GifPicker onSelect={sendGif} onClose={() => setShowGifPicker(false)} />
       )}
 
+      {replyTo && (
+        <div style={s.replyBar}>
+          <span style={s.replyBarText}>↩ Replying to: {replyPreviewText(replyTo.content)}</span>
+          <button style={s.replyBarClose} onClick={() => setReplyTo(null)}>✕</button>
+        </div>
+      )}
+
       <div style={s.inputBar}>
         <button
           style={{ ...s.gifBtn, ...(showGifPicker ? s.gifBtnActive : {}) }}
@@ -348,6 +411,7 @@ export default function ChatScreen({ room, myToken, onEnd }) {
           GIF
         </button>
         <textarea
+          ref={textareaRef}
           style={s.textarea}
           placeholder="Type a message…"
           value={input}
@@ -556,9 +620,9 @@ const s = {
     paddingLeft: '4px',
     paddingRight: '4px',
   }),
-  bubble: (mine, isLastInGroup, isGif) => ({
-    maxWidth: isGif ? '60%' : '72%',
-    padding: isGif ? '4px' : '10px 16px',
+  bubble: (mine, isLastInGroup, isGif, hasReply) => ({
+    maxWidth: (isGif && !hasReply) ? '60%' : '72%',
+    padding: hasReply ? '8px 10px' : (isGif ? '4px' : '10px 16px'),
     borderRadius: mine
       ? (isLastInGroup ? '18px 18px 4px 18px' : '18px')
       : (isLastInGroup ? '18px 18px 18px 4px' : '18px'),
@@ -570,7 +634,53 @@ const s = {
     wordBreak: 'break-word',
     whiteSpace: isGif ? 'normal' : 'pre-wrap',
     overflow: 'hidden',
+    cursor: 'default',
   }),
+  quotedBlock: (mine) => ({
+    background: mine ? 'rgba(0,0,0,0.22)' : '#0d0d0d',
+    borderLeft: `2px solid ${mine ? 'rgba(255,255,255,0.18)' : '#2a2a2a'}`,
+    borderRadius: '6px',
+    padding: '5px 8px',
+    marginBottom: '7px',
+    fontSize: '12px',
+    color: '#666',
+    lineHeight: '1.4',
+    overflow: 'hidden',
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical',
+    wordBreak: 'break-word',
+    whiteSpace: 'pre-wrap',
+  }),
+  replyBar: {
+    display: 'flex',
+    alignItems: 'center',
+    padding: '7px 16px',
+    borderTop: '1px solid #1a1a1a',
+    background: '#060606',
+    flexShrink: 0,
+    gap: '8px',
+    animation: 'fadeIn 0.12s ease-out',
+  },
+  replyBarText: {
+    fontSize: '12px',
+    color: '#555',
+    flex: 1,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  replyBarClose: {
+    background: 'transparent',
+    border: 'none',
+    color: '#444',
+    fontSize: '13px',
+    cursor: 'pointer',
+    padding: '2px 4px',
+    flexShrink: 0,
+    lineHeight: 1,
+    transition: 'color 0.15s',
+  },
   gifImg: {
     display: 'block',
     width: '100%',
