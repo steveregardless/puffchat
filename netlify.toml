@@ -2,20 +2,26 @@
   command = "bash build.sh"
   publish = "publish"
 
-# Correct content-type for the PWA manifest (Netlify doesn't set this automatically)
+# ── PWA: serve manifest with correct MIME type ───────────────────────────────
+# Netlify does not recognise .webmanifest natively; without this the browser
+# silently rejects the manifest, causing "Untitled" name and no icon.
 [[headers]]
   for = "/app/manifest.webmanifest"
   [headers.values]
     Content-Type = "application/manifest+json; charset=utf-8"
+    Cache-Control = "no-cache"
 
-# Prevent CDN from caching the service worker so updates propagate immediately
+# ── PWA: never let the CDN cache the service worker ──────────────────────────
+# A stale sw.js means the app can't detect updates. Must-revalidate ensures
+# the browser always checks for a new version on each load.
 [[headers]]
   for = "/app/sw.js"
   [headers.values]
+    Content-Type = "application/javascript"
     Cache-Control = "no-cache, no-store, must-revalidate"
 
-# Serve the React SPA for any path under /app
+# ── SPA: serve index.html for all /app/* routes that are not real files ───────
 [[redirects]]
   from = "/app/*"
-  to = "/app/index.html"
+  to   = "/app/index.html"
   status = 200

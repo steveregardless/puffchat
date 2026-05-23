@@ -18,17 +18,17 @@ export default defineConfig({
         scope: '/app/',
         icons: [
           {
-            src: 'icons/icon-192x192.png',
+            src: '/app/icon-192.png',
             sizes: '192x192',
             type: 'image/png',
           },
           {
-            src: 'icons/icon-512x512.png',
+            src: '/app/icon-512.png',
             sizes: '512x512',
             type: 'image/png',
           },
           {
-            src: 'icons/icon-512x512.png',
+            src: '/app/icon-512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',
@@ -36,8 +36,14 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,png,svg,woff2}'],
-        globIgnores: ['icons/icon-192x192.png', 'icons/icon-512x512.png'],
+        // Precache JS, CSS, HTML, fonts — not PNGs (icons handled below)
+        globPatterns: ['**/*.{js,css,html,svg,woff2}'],
+        // Explicitly precache the three icon files (not picked up by glob above)
+        additionalManifestEntries: [
+          { url: 'apple-touch-icon.png', revision: null },
+          { url: 'icon-192.png',         revision: null },
+          { url: 'icon-512.png',         revision: null },
+        ],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
