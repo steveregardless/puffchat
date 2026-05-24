@@ -3,6 +3,7 @@ import { supabase, SUPABASE_URL, SUPABASE_KEY } from '../supabase'
 
 export default function WaitingScreen({ room, onPartnerJoined, onCancel }) {
   const [copied, setCopied] = useState(false)
+  const [shared, setShared] = useState(false)
   const [leaving, setLeaving] = useState(false)
   const chanRef = useRef(null)
   const doneRef = useRef(false)
@@ -84,6 +85,18 @@ export default function WaitingScreen({ room, onPartnerJoined, onCancel }) {
     })
   }
 
+  function handleShare() {
+    const url = `${window.location.origin}/join/${room.code}`
+    if (navigator.share) {
+      navigator.share({ title: 'Join my Puffchat room', url }).catch(() => {})
+    } else {
+      navigator.clipboard.writeText(url).then(() => {
+        setShared(true)
+        setTimeout(() => setShared(false), 2000)
+      })
+    }
+  }
+
   return (
     <div style={s.page}>
       <div style={s.logo}>puffchat</div>
@@ -91,9 +104,19 @@ export default function WaitingScreen({ room, onPartnerJoined, onCancel }) {
       <div style={s.codeCard}>
         <div style={s.codeLabel}>share this code</div>
         <div style={s.code}>{room.code}</div>
-        <button style={s.copyBtn} onClick={handleCopy}>
-          {copied ? 'Copied!' : 'Copy code'}
-        </button>
+        <div style={s.btnRow}>
+          <button style={s.copyBtn} onClick={handleCopy}>
+            {copied ? 'Copied!' : 'Copy code'}
+          </button>
+          <button style={s.shareBtn} onClick={handleShare}>
+            {shared ? 'Link copied!' : (
+              <>
+                <ShareIcon />
+                Share
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       <div style={s.statusRow}>
@@ -109,6 +132,20 @@ export default function WaitingScreen({ room, onPartnerJoined, onCancel }) {
         Cancel
       </button>
     </div>
+  )
+}
+
+function ShareIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+      style={{ display: 'block', flexShrink: 0 }}>
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+    </svg>
   )
 }
 
@@ -153,16 +190,44 @@ const s = {
     lineHeight: 1,
     fontVariantNumeric: 'tabular-nums',
   },
+  btnRow: {
+    display: 'flex',
+    gap: '10px',
+    alignItems: 'center',
+    width: '100%',
+  },
   copyBtn: {
+    flex: 1,
+    height: '44px',
+    padding: '0 22px',
     background: '#1d4ed8',
     color: '#f5f5f5',
-    border: 'none',
+    border: '1px solid transparent',
     borderRadius: '999px',
-    padding: '10px 26px',
     fontSize: '13px',
     fontWeight: 500,
     cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     transition: 'opacity 0.15s',
+  },
+  shareBtn: {
+    flex: 1,
+    height: '44px',
+    padding: '0 22px',
+    background: 'transparent',
+    color: '#555',
+    border: '1px solid #1a1a1a',
+    borderRadius: '999px',
+    fontSize: '13px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+    transition: 'color 0.15s, border-color 0.15s',
   },
   statusRow: {
     display: 'flex',

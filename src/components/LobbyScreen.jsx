@@ -10,44 +10,9 @@ function makeCode() {
   return `${s.slice(0, 3)}-${s.slice(3)}`
 }
 
-export default function LobbyScreen({ onCreated, onJoined }) {
-  const [creating, setCreating] = useState(false)
-  const [createErr, setCreateErr] = useState('')
-  const [showJoinModal, setShowJoinModal] = useState(false)
-
-  async function handleCreate() {
-    setCreating(true)
-    setCreateErr('')
-    try {
-      const code = makeCode()
-      const { data, error } = await supabase
-        .from('rooms')
-        .insert({ code, status: 'waiting' })
-        .select()
-        .single()
-
-      if (error) {
-        console.error('[puffchat] create room error:', error)
-        setCreateErr(`${error.message} (${error.code})`)
-        return
-      }
-
-      onCreated(data)
-    } catch (e) {
-      console.error('[puffchat] unexpected error:', e)
-      setCreateErr(e?.message ?? 'Network error — check the console.')
-    } finally {
-      setCreating(false)
-    }
-  }
-
-  function openJoin() {
-    setShowJoinModal(true)
-  }
-
-  function closeJoin() {
-    setShowJoinModal(false)
-  }
+export default function LobbyScreen({ onCreated, onJoined, autoJoinCode }) {
+  const [showModeModal, setShowModeModal] = useState(false)
+  const [showJoinModal, setShowJoinModal] = useState(() => Boolean(autoJoinCode))
 
   return (
     <>
@@ -59,107 +24,65 @@ export default function LobbyScreen({ onCreated, onJoined }) {
 
         <div style={s.actions}>
           <button
-            style={{ ...s.btnCreate, opacity: creating ? 0.55 : 1 }}
-            onClick={handleCreate}
-            disabled={creating}
+            style={s.btnCreate}
+            onClick={() => setShowModeModal(true)}
           >
-            {creating ? 'Creating…' : 'Create room'}
+            Create room
           </button>
 
-          {createErr && <div style={s.inlineErr}>{createErr}</div>}
-
-          <button style={s.btnJoin} onClick={openJoin}>
+          <button style={s.btnJoin} onClick={() => setShowJoinModal(true)}>
             Join room
           </button>
         </div>
       </div>
 
+      {showModeModal && (
+        <ModeModal onClose={() => setShowModeModal(false)} onCreated={onCreated} />
+      )}
       {showJoinModal && (
-        <JoinModal onJoined={onJoined} onClose={closeJoin} />
+        <JoinModal
+          onJoined={onJoined}
+          onClose={() => setShowJoinModal(false)}
+          autoCode={autoJoinCode}
+        />
       )}
     </>
   )
 }
 
-function JoinModal({ onJoined, onClose }) {
-  const [code, setCode] = useState('')
-  const [joining, setJoining] = useState(false)
+function ModeModal({ onClose, onCreated }) {
+  const [mode, setMode] = useState('disposable')
+  const [duration, setDuration] = useState(1)
+  const [creating, setCreating] = useState(false)
   const [err, setErr] = useState('')
-  const inputRef = useRef(null)
 
   useEffect(() => {
-    inputRef.current?.focus()
-
-    function onKey(e) {
-      if (e.key === 'Escape') onClose()
-    }
+    function onKey(e) { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  async function handleJoin() {
-    const trimmed = code.trim().toUpperCase()
-    if (!trimmed) {
-      setErr('Enter a room code.')
-      return
-    }
-    if (!CODE_RE.test(trimmed)) {
-      setErr('Invalid code format. Should look like ABC-123.')
-      return
-    }
-    setJoining(true)
+  async function handleCreate() {
+    setCreating(true)
     setErr('')
     try {
-      const { data: rows, error } = await supabase
+      const code = makeCode()
+      const insertData = { code, status: 'waiting', mode }
+      if (mode === 'timed') {
+        insertData.expires_at = new Date(Date.now() + duration * 3600 * 1000).toISOString()
+      }
+      const { data, error } = await supabase
         .from('rooms')
-        .select('*')
-        .eq('code', trimmed)
-        .eq('status', 'waiting')
-
-      if (error) {
-        setErr(`${error.message} (${error.code})`)
-        setJoining(false)
-        return
-      }
-
-      if (!rows?.length) {
-        setErr('Room not found or already taken.')
-        setJoining(false)
-        return
-      }
-
-      const room = rows[0]
-
-      // Atomic conditional update: only succeeds if the room is still 'waiting'.
-      // Prevents two simultaneous joiners both entering the same room.
-      const { data: updated, error: upErr } = await supabase
-        .from('rooms')
-        .update({ status: 'active' })
-        .eq('id', room.id)
-        .eq('status', 'waiting')
-        .select('id')
-
-      if (upErr) {
-        setErr(`${upErr.message} (${upErr.code})`)
-        setJoining(false)
-        return
-      }
-
-      if (!updated?.length) {
-        setErr('Room was just taken by someone else. Try another code.')
-        setJoining(false)
-        return
-      }
-
-      onJoined(room)
+        .insert(insertData)
+        .select()
+        .single()
+      if (error) { setErr(`${error.message} (${error.code})`); return }
+      onCreated(data)
     } catch (e) {
       setErr(e?.message ?? 'Network error.')
-      setJoining(false)
+    } finally {
+      setCreating(false)
     }
-  }
-
-  function onKey(e) {
-    if (e.key === 'Enter') handleJoin()
   }
 
   return (
@@ -169,8 +92,154 @@ function JoinModal({ onJoined, onClose }) {
           <CloseIcon />
         </button>
 
+        <div style={s.modalTitle}>Create room</div>
+
+        <div style={s.modeCards}>
+          {['disposable', 'timed'].map(m => (
+            <button
+              key={m}
+              style={{
+                ...s.modeCard,
+                borderColor: mode === m ? '#1d4ed8' : '#1a1a1a',
+                background: mode === m ? 'rgba(29,78,216,0.08)' : 'transparent',
+              }}
+              onClick={() => setMode(m)}
+            >
+              <div style={s.modeCardTitle}>{m === 'disposable' ? 'Disposable' : 'Timed'}</div>
+              <div style={s.modeCardSub}>
+                {m === 'disposable'
+                  ? 'Deletes when someone leaves'
+                  : 'Persists for a set duration'}
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {mode === 'timed' && (
+          <div style={s.durationRow}>
+            {[1, 6, 24].map(h => (
+              <button
+                key={h}
+                style={{
+                  ...s.durationBtn,
+                  background: duration === h ? '#1d4ed8' : 'transparent',
+                  borderColor: duration === h ? '#1d4ed8' : '#1a1a1a',
+                  color: duration === h ? '#f5f5f5' : '#555',
+                }}
+                onClick={() => setDuration(h)}
+              >
+                {h === 1 ? '1 hour' : h === 6 ? '6 hours' : '24 hours'}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {err && <div style={s.modalErr}>{err}</div>}
+
+        <button
+          style={{ ...s.btnJoinModal, opacity: creating ? 0.55 : 1 }}
+          onClick={handleCreate}
+          disabled={creating}
+        >
+          {creating ? 'Creating…' : 'Create'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function JoinModal({ onJoined, onClose, autoCode }) {
+  const [code, setCode] = useState(autoCode ?? '')
+  const [joining, setJoining] = useState(false)
+  const [err, setErr] = useState('')
+  const inputRef = useRef(null)
+  const autoFiredRef = useRef(false)
+
+  useEffect(() => {
+    if (!autoCode) inputRef.current?.focus()
+
+    function onKey(e) { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose, autoCode])
+
+  useEffect(() => {
+    if (autoCode && !autoFiredRef.current) {
+      autoFiredRef.current = true
+      joinWithCode(autoCode)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function joinWithCode(codeStr) {
+    const trimmed = codeStr.trim().toUpperCase()
+    if (!trimmed) { setErr('Enter a room code.'); return }
+    if (!CODE_RE.test(trimmed)) { setErr('Invalid code format. Should look like ABC-123.'); return }
+    setJoining(true)
+    setErr('')
+    try {
+      const { data: rows, error } = await supabase
+        .from('rooms')
+        .select('*')
+        .eq('code', trimmed)
+
+      if (error) { setErr(`${error.message} (${error.code})`); setJoining(false); return }
+      if (!rows?.length) { setErr('Room not found or expired.'); setJoining(false); return }
+
+      const room = rows[0]
+
+      // Check expiry
+      if (room.expires_at && new Date(room.expires_at) < new Date()) {
+        setErr('This chat has expired.')
+        setJoining(false)
+        return
+      }
+
+      // Timed room that's already active — rejoin directly
+      if (room.status === 'active' && room.mode === 'timed') {
+        onJoined(room)
+        return
+      }
+
+      // Disposable room already active (someone else has it)
+      if (room.status !== 'waiting') {
+        setErr('Room not found or expired.')
+        setJoining(false)
+        return
+      }
+
+      // Normal join: atomically claim the waiting room
+      const { data: updated, error: upErr } = await supabase
+        .from('rooms')
+        .update({ status: 'active' })
+        .eq('id', room.id)
+        .eq('status', 'waiting')
+        .select('id')
+
+      if (upErr) { setErr(`${upErr.message} (${upErr.code})`); setJoining(false); return }
+      if (!updated?.length) { setErr('Room not found or expired.'); setJoining(false); return }
+
+      onJoined(room)
+    } catch (e) {
+      setErr(e?.message ?? 'Network error.')
+      setJoining(false)
+    }
+  }
+
+  function handleJoin() { joinWithCode(code) }
+
+  function onKey(e) { if (e.key === 'Enter') handleJoin() }
+
+  return (
+    <div style={s.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={s.modal}>
+        <button style={s.closeBtn} onClick={onClose} aria-label="Close">
+          <CloseIcon />
+        </button>
+
         <div style={s.modalTitle}>Join a room</div>
-        <div style={s.modalSub}>Enter the code you were given</div>
+        <div style={s.modalSub}>
+          {autoCode ? 'Joining via shared link…' : 'Enter the code you were given'}
+        </div>
 
         <input
           ref={inputRef}
@@ -182,6 +251,7 @@ function JoinModal({ onJoined, onClose }) {
           maxLength={7}
           spellCheck={false}
           autoComplete="off"
+          readOnly={Boolean(autoCode)}
         />
 
         {err && <div style={s.modalErr}>{err}</div>}
@@ -265,15 +335,8 @@ const s = {
     letterSpacing: '0.1px',
     transition: 'border-color 0.15s',
   },
-  inlineErr: {
-    fontSize: '12px',
-    color: '#ef4444',
-    textAlign: 'center',
-    padding: '0 8px',
-    lineHeight: 1.4,
-  },
 
-  // Modal
+  // Modal shared
   overlay: {
     position: 'fixed',
     inset: 0,
@@ -327,20 +390,6 @@ const s = {
     color: '#555',
     marginTop: '-8px',
   },
-  codeInput: {
-    height: '52px',
-    background: '#000',
-    border: '1px solid #1a1a1a',
-    borderRadius: '999px',
-    padding: '0 22px',
-    fontSize: '17px',
-    fontWeight: 600,
-    color: '#f5f5f5',
-    letterSpacing: '3px',
-    caretColor: '#1d4ed8',
-    transition: 'border-color 0.15s',
-    marginTop: '4px',
-  },
   modalErr: {
     fontSize: '12px',
     color: '#ef4444',
@@ -359,5 +408,63 @@ const s = {
     marginTop: '4px',
     transition: 'opacity 0.15s',
     letterSpacing: '0.1px',
+  },
+
+  // Join modal
+  codeInput: {
+    height: '52px',
+    background: '#000',
+    border: '1px solid #1a1a1a',
+    borderRadius: '999px',
+    padding: '0 22px',
+    fontSize: '17px',
+    fontWeight: 600,
+    color: '#f5f5f5',
+    letterSpacing: '3px',
+    caretColor: '#1d4ed8',
+    transition: 'border-color 0.15s',
+    marginTop: '4px',
+  },
+
+  // Mode modal
+  modeCards: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+  },
+  modeCard: {
+    background: 'transparent',
+    border: '1px solid #1a1a1a',
+    borderRadius: '14px',
+    padding: '14px 18px',
+    cursor: 'pointer',
+    textAlign: 'left',
+    transition: 'border-color 0.15s, background 0.15s',
+  },
+  modeCardTitle: {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#f5f5f5',
+  },
+  modeCardSub: {
+    fontSize: '12px',
+    color: '#555',
+    marginTop: '3px',
+  },
+  durationRow: {
+    display: 'flex',
+    gap: '8px',
+  },
+  durationBtn: {
+    flex: 1,
+    padding: '8px 4px',
+    background: 'transparent',
+    border: '1px solid #1a1a1a',
+    borderRadius: '999px',
+    color: '#555',
+    fontSize: '13px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    transition: 'all 0.15s',
   },
 }

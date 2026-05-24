@@ -7,10 +7,16 @@ function getSenderToken() {
   return crypto.randomUUID()
 }
 
+function readAutoJoinCode() {
+  const params = new URLSearchParams(window.location.search)
+  return params.get('join') ?? ''
+}
+
 export default function App() {
   const [screen, setScreen] = useState('lobby')
   const [room, setRoom] = useState(null)
   const [myToken] = useState(getSenderToken)
+  const [autoJoinCode, setAutoJoinCode] = useState(readAutoJoinCode)
 
   const goWaiting = useCallback((room) => {
     setRoom(room)
@@ -25,6 +31,10 @@ export default function App() {
   const goLobby = useCallback(() => {
     setRoom(null)
     setScreen('lobby')
+    setAutoJoinCode('')
+    const url = new URL(window.location.href)
+    url.searchParams.delete('join')
+    window.history.replaceState({}, '', url)
   }, [])
 
   const goPartnerJoined = useCallback(() => setScreen('chat'), [])
@@ -32,7 +42,7 @@ export default function App() {
   return (
     <div style={{ height: '100%' }}>
       {screen === 'lobby' && (
-        <LobbyScreen onCreated={goWaiting} onJoined={goChat} />
+        <LobbyScreen onCreated={goWaiting} onJoined={goChat} autoJoinCode={autoJoinCode} />
       )}
       {screen === 'waiting' && (
         <WaitingScreen

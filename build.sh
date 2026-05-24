@@ -25,4 +25,7 @@ cp -r landing/dist/. publish/
 mkdir -p publish/app
 cp -r dist/. publish/app/
 
+# Redirect /join/CODE → /app/?join=CODE for share links
+echo "/join/* /app/?join=:splat 302" > publish/_redirects
+
 echo "Done. publish/ is ready."
